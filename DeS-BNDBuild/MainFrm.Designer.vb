@@ -116,7 +116,7 @@ Partial Class MainFrm
         Me.lblVersion.Name = "lblVersion"
         Me.lblVersion.Size = New System.Drawing.Size(100, 13)
         Me.lblVersion.TabIndex = 42
-        Me.lblVersion.Text = "2017-10-24-24"
+        Me.lblVersion.Text = "2017-11-4-25"
         Me.lblVersion.TextAlign = System.Drawing.ContentAlignment.BottomLeft
         Me.lblVersion.UseCompatibleTextRendering = True
         '
