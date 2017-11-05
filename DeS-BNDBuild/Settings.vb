@@ -19,32 +19,32 @@ Namespace My
             (Not File.Exists(path))
         End Function
 
-        <Setting> <Category("Basic")> <Name("Dark Souls Data Path")>
-        <DefaultVal("C:\Program Files (x86)\Steam\steamapps\common\Dark Souls Prepare to Die Edition\DATA\")>
-        <Description("The game's data directory (e.g. '.\steamapps\common\Dark Souls Prepare to Die Edition\DATA\'). " &
-                     "This is used to detect the paths of files relative to the root data directory in order to " &
-                     "better organize the extracted files as well as solve issues which arise when using a " &
-                     "Custom Data Root Path due to some BND file formats not actually specifying the directories " &
-                     "for any of the content files.")>
-        Public Property DarkSoulsDataPath As String
-            Get
-                Return Me(NameOf(DarkSoulsDataPath)).Trim()
-            End Get
-            Set(value As String)
-                Me(NameOf(DarkSoulsDataPath)) = value.Trim()
+        '<Setting> <Category("Basic")> <Name("Dark Souls Data Path")>
+        '<DefaultVal("C:\Program Files (x86)\Steam\steamapps\common\Dark Souls Prepare to Die Edition\DATA\")>
+        '<Description("The game's data directory (e.g. '.\steamapps\common\Dark Souls Prepare to Die Edition\DATA\'). " &
+        '             "This is used to detect the paths of files relative to the root data directory in order to " &
+        '             "better organize the extracted files as well as solve issues which arise when using a " &
+        '             "Custom Data Root Path due to some BND file formats not actually specifying the directories " &
+        '             "for any of the content files.")>
+        'Public Property DarkSoulsDataPath As String
+        '    Get
+        '        Return Me(NameOf(DarkSoulsDataPath)).Trim()
+        '    End Get
+        '    Set(value As String)
+        '        Me(NameOf(DarkSoulsDataPath)) = value.Trim()
 
-                If IsConfigPathValid(My.Settings.DarkSoulsDataPath) AndAlso
-                (Not IsConfigPathValid(My.Settings.FileBrowserStartingPath)) Then
-                    FileBrowserStartingPath = DarkSoulsDataPath
+        '        If IsConfigPathValid(My.Settings.DarkSoulsDataPath) AndAlso
+        '        (Not IsConfigPathValid(My.Settings.FileBrowserStartingPath)) Then
+        '            FileBrowserStartingPath = DarkSoulsDataPath
 
-                    Dim pathWithoutSlash As String = value.TrimEnd(New Char() {"\"c, "/"c})
+        '            Dim pathWithoutSlash As String = value.TrimEnd(New Char() {"\"c, "/"c})
 
-                    RemoteBNDBackupPath = pathWithoutSlash & "_BACKUP\" 'DATA_BACKUP
-                    RemoteBNDTablePath = pathWithoutSlash & "_TABLE\" 'DATA_TABLE
-                End If
+        '            RemoteBNDBackupPath = pathWithoutSlash & "_BACKUP\" 'DATA_BACKUP
+        '            RemoteBNDTablePath = pathWithoutSlash & "_TABLE\" 'DATA_TABLE
+        '        End If
 
-            End Set
-        End Property
+        '    End Set
+        'End Property
 
         <Setting> <Category("Basic")> <Name("Enable Verbose Output")>
         <DefaultVal("False")>
@@ -61,7 +61,7 @@ Namespace My
 
         <Setting> <Category("Data Root")> <Name("Use Custom Data Root Path")> <DefaultVal("False")>
         <Description("BND contents have the specified Custom Data Root Path substituted for " &
-              "the root path 'N:\FRPG\' when exported. This does not effect the internal " &
+              "the root path of the game data when exported. This does not effect the internal " &
               "path uris saved into the BND itself and the game will still load the files " &
               "the same way. This option simply makes it easier to edit the contents of " &
               "multiple BNDs at once.")>
@@ -74,7 +74,7 @@ Namespace My
             End Set
         End Property
 
-        <Setting> <Category("Data Root")> <Name("Custom Data Root Path")> <DefaultVal("C:\FRPG\")>
+        <Setting> <Category("Data Root")> <Name("Custom Data Root Path")> <DefaultVal("C:\BNDBuild\")>
         <Description("Specifies the custom data root path to use when 'Use Custom Data Root Path' is enabled. " &
         "See the description of the 'Use Custom Data Root Path' option for more information.")>
         Public Property CustomDataRootPath As String
@@ -98,57 +98,59 @@ Namespace My
             End Set
         End Property
 
-        <Setting> <Category("BND Tables")> <Name("Use Remote BND Table Path")> <DefaultVal("False")>
-        <Description("Saves/Loads each BND's table " &
-        "(the file which lists the file IDs and internal paths of its contents) " &
-        "in a remotely-located folder tree which mirrors that of the specified Dark Souls Data Path, allowing you " &
-        "to keep the main data folder tree from getting cluttered with '*bnd.txt' entries.")>
-        Public Property UseRemoteBNDTablePath As Boolean
-            Get
-                Return Me(NameOf(UseRemoteBNDTablePath))
-            End Get
-            Set(value As Boolean)
-                Me(NameOf(UseRemoteBNDTablePath)) = value
-            End Set
-        End Property
+        '<Setting> <Category("BND Tables")> <Name("Use Remote BND Table Path")> <DefaultVal("False")>
+        '<Description("Saves/Loads each BND's table " &
+        '"(the file which lists the file IDs and internal paths of its contents) " &
+        '"in a remotely-located folder tree which mirrors that of the specified Dark Souls Data Path, allowing you " &
+        '"to keep the main data folder tree from getting cluttered with '*bnd.txt' entries.")>
+        'Public Property UseRemoteBNDTablePath As Boolean
+        '    Get
+        '        Return Me(NameOf(UseRemoteBNDTablePath))
+        '    End Get
+        '    Set(value As Boolean)
+        '        Me(NameOf(UseRemoteBNDTablePath)) = value
+        '    End Set
+        'End Property
 
-        <Setting> <Category("BND Tables")> <Name("Remote BND Table Path")>
-        <DefaultVal("C:\Program Files (x86)\Steam\steamapps\common\Dark Souls Prepare to Die Edition\DATA_BNDTables\")>
-        <Description("The path used for the 'Use Remote BND Table Path' option. Please refer to it for more information.")>
-        Public Property RemoteBNDTablePath As String
-            Get
-                Return Me(NameOf(RemoteBNDTablePath)).Trim()
-            End Get
-            Set(value As String)
-                Me(NameOf(RemoteBNDTablePath)) = value.Trim()
-            End Set
-        End Property
+        '<Setting> <Category("BND Tables")> <Name("Remote BND Table Path")>
+        '<DefaultVal("C:\Program Files (x86)\Steam\steamapps\common\Dark Souls Prepare to Die Edition\DATA_BNDTables\")>
+        '<Description("The path used for the 'Use Remote BND Table Path' option. Please refer to it for more information.")>
+        'Public Property RemoteBNDTablePath As String
+        '    Get
+        '        Return Me(NameOf(RemoteBNDTablePath)).Trim()
+        '    End Get
+        '    Set(value As String)
+        '        Me(NameOf(RemoteBNDTablePath)) = value.Trim()
+        '    End Set
+        'End Property
 
-        <Setting> <Category("BND Backups")> <Name("Use Remote BND Backup Path")> <DefaultVal("False")>
-        <Description("Saves/Loads each BND's backup " &
-        "in a remotely-located folder tree which mirrors that of the specified Dark Souls Data Path, allowing you " &
-        "to keep the main data folder tree from getting cluttered with '*bnd.bak' entries.")>
-        Public Property UseRemoteBNDBackupPath As Boolean
-            Get
-                Return Me(NameOf(UseRemoteBNDBackupPath))
-            End Get
-            Set(value As Boolean)
-                Me(NameOf(UseRemoteBNDBackupPath)) = value
-            End Set
-        End Property
+        '<Setting> <Category("BND Backups")> <Name("Use Remote BND Backup Path")> <DefaultVal("False")>
+        '<Description("Saves/Loads each BND's backup " &
+        '"in a remotely-located folder tree which mirrors that of the specified Dark Souls Data Path, allowing you " &
+        '"to keep the main data folder tree from getting cluttered with '*bnd.bak' entries.")>
+        'Public Property UseRemoteBNDBackupPath As Boolean
+        '    Get
+        '        Return Me(NameOf(UseRemoteBNDBackupPath))
+        '    End Get
+        '    Set(value As Boolean)
+        '        Me(NameOf(UseRemoteBNDBackupPath)) = value
+        '    End Set
+        'End Property
 
-        <Setting> <Category("BND Backups")> <Name("Remote BND Backup Path")>
-        <DefaultVal("")>
-        <Description("The path used for the 'Use Remote BND Backup Path' option. Please refer to it for more information.")>
-        Public Property RemoteBNDBackupPath As String
-            Get
-                Return Me(NameOf(RemoteBNDBackupPath)).Trim()
-            End Get
-            Set(value As String)
-                Me(NameOf(RemoteBNDBackupPath)) = value.Trim()
-            End Set
-        End Property
+        '<Setting> <Category("BND Backups")> <Name("Remote BND Backup Path")>
+        '<DefaultVal("")>
+        '<Description("The path used for the 'Use Remote BND Backup Path' option. Please refer to it for more information.")>
+        'Public Property RemoteBNDBackupPath As String
+        '    Get
+        '        Return Me(NameOf(RemoteBNDBackupPath)).Trim()
+        '    End Get
+        '    Set(value As String)
+        '        Me(NameOf(RemoteBNDBackupPath)) = value.Trim()
+        '    End Set
+        'End Property
 
+        <Setting> <Category("Misc")> <Name("IsFirstRun")> <DefaultVal("True")>
+        Public Property FirstRun As Boolean
 
 
     End Class

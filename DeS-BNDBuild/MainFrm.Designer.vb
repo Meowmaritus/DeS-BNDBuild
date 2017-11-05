@@ -22,6 +22,7 @@ Partial Class MainFrm
     'Do not modify it using the code editor.
     <System.Diagnostics.DebuggerStepThrough()>
     Private Sub InitializeComponent()
+        Me.components = New System.ComponentModel.Container()
         Dim resources As System.ComponentModel.ComponentResourceManager = New System.ComponentModel.ComponentResourceManager(GetType(MainFrm))
         Me.txtBNDfile = New System.Windows.Forms.RichTextBox()
         Me.lblGAFile = New System.Windows.Forms.Label()
@@ -38,6 +39,10 @@ Partial Class MainFrm
         Me.btnLoadList = New System.Windows.Forms.Button()
         Me.btnRestoreBackups = New System.Windows.Forms.Button()
         Me.progressBar = New System.Windows.Forms.ProgressBar()
+        Me.Label1 = New System.Windows.Forms.Label()
+        Me.gameSelectBox = New System.Windows.Forms.ComboBox()
+        Me.GameDefBindingSource = New System.Windows.Forms.BindingSource(Me.components)
+        CType(Me.GameDefBindingSource, System.ComponentModel.ISupportInitialize).BeginInit()
         Me.SuspendLayout()
         '
         'txtBNDfile
@@ -116,7 +121,7 @@ Partial Class MainFrm
         Me.lblVersion.Name = "lblVersion"
         Me.lblVersion.Size = New System.Drawing.Size(100, 13)
         Me.lblVersion.TabIndex = 42
-        Me.lblVersion.Text = "2017-11-4-26"
+        Me.lblVersion.Text = "2017-11-5-27"
         Me.lblVersion.TextAlign = System.Drawing.ContentAlignment.BottomLeft
         Me.lblVersion.UseCompatibleTextRendering = True
         '
@@ -219,11 +224,38 @@ Partial Class MainFrm
         Me.progressBar.TabIndex = 57
         Me.progressBar.Visible = False
         '
+        'Label1
+        '
+        Me.Label1.Anchor = CType((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.Label1.AutoSize = True
+        Me.Label1.Location = New System.Drawing.Point(369, 7)
+        Me.Label1.Name = "Label1"
+        Me.Label1.Size = New System.Drawing.Size(198, 13)
+        Me.Label1.TabIndex = 58
+        Me.Label1.Text = "Game (will cause errors if set incorrectly):"
+        '
+        'gameSelectBox
+        '
+        Me.gameSelectBox.Anchor = CType((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.gameSelectBox.DataSource = Me.GameDefBindingSource
+        Me.gameSelectBox.DisplayMember = "DisplayName"
+        Me.gameSelectBox.FormattingEnabled = True
+        Me.gameSelectBox.Location = New System.Drawing.Point(573, 3)
+        Me.gameSelectBox.Name = "gameSelectBox"
+        Me.gameSelectBox.Size = New System.Drawing.Size(121, 21)
+        Me.gameSelectBox.TabIndex = 59
+        '
+        'GameDefBindingSource
+        '
+        Me.GameDefBindingSource.DataSource = GetType(DeSBNDBuild.GameDef)
+        '
         'MainFrm
         '
         Me.AutoScaleDimensions = New System.Drawing.SizeF(6.0!, 13.0!)
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
         Me.ClientSize = New System.Drawing.Size(704, 441)
+        Me.Controls.Add(Me.gameSelectBox)
+        Me.Controls.Add(Me.Label1)
         Me.Controls.Add(Me.btnRestoreBackups)
         Me.Controls.Add(Me.btnLoadList)
         Me.Controls.Add(Me.btnSaveList)
@@ -242,7 +274,8 @@ Partial Class MainFrm
         Me.DoubleBuffered = True
         Me.MinimumSize = New System.Drawing.Size(720, 360)
         Me.Name = "MainFrm"
-        Me.Text = "Wulf's BND Rebuilder 2.0"
+        Me.Text = "Wulf's BND Rebuilder 2.1"
+        CType(Me.GameDefBindingSource, System.ComponentModel.ISupportInitialize).EndInit()
         Me.ResumeLayout(False)
         Me.PerformLayout()
 
@@ -262,4 +295,7 @@ Partial Class MainFrm
     Friend WithEvents btnLoadList As Button
     Friend WithEvents btnRestoreBackups As Button
     Friend WithEvents progressBar As ProgressBar
+    Friend WithEvents Label1 As Label
+    Friend WithEvents gameSelectBox As ComboBox
+    Friend WithEvents GameDefBindingSource As BindingSource
 End Class

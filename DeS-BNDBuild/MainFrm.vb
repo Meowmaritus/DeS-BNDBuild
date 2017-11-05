@@ -8,8 +8,6 @@ Public Class MainFrm
     Public Shared ReadOnly VALID_BND_EXTENSIONS() As String = {"BND", "MOWB", "DCX", "TPF", "BHD5", "BHD"}
 
     Public Const COMMENT_STR = ">"
-    Public Const FRPG_ROOT = "N:\FRPG\"
-    Public Const DATA_ROOT = "\DATA\"
 
     Public Shared CURRENT_JOB_TYPE As BNDJobType
 
@@ -311,7 +309,7 @@ Public Class MainFrm
         Dim nextJob = New BNDJob(BNDJobPauseHandle,
                        BNDJobTokenSourceCancel.Token,
                        BNDJobTokenSourceRevertCancel.Token,
-                       type, fileList)
+                       type, fileList, gameSelectBox.SelectedItem)
 
         AddHandler nextJob.OnFinishItem, AddressOf CurrentJob_OnFinishItem
 
@@ -1235,7 +1233,7 @@ Public Class MainFrm
                                 currFilePath = currFileInfo.DirectoryName & "\"
                                 currFileName = currFileInfo.Name
 
-                                tmpbytes = File_ReadAllBytes(currFileName)
+                                tmpbytes = File_ReadAllBytes(currFilePath & currFileName)
                                 currFileID = Microsoft.VisualBasic.Left(currFileListEntry, InStr(currFileListEntry, ",") - 1)
 
                                 UIntToBytes(&H2000000, &H20 + i * &H14)
@@ -1265,16 +1263,13 @@ Public Class MainFrm
                                 currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset).Length + 1
                             Case &H2E010100
 
-                                If frpg Then
-                                    currFileName = currFileListEntry.Split(",")(1)
-                                    If currFileName.ToUpper.StartsWith("N:\") Then
-                                        currFileName = "C:\" & currFileName.Substring("N:\".Length)
-                                    End If
-                                Else
-                                    currFileName = filepath & filename & ".extract\" & Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ",") + 3))
-                                End If
+                                currFileName = currFileListEntry.Substring(currFileListEntry.IndexOf(",") + 1)
 
-                                tmpbytes = File_ReadAllBytes(currFileName)
+                                currFileInfo = Job.GetExtractedFile(currFileName)
+                                currFilePath = currFileInfo.DirectoryName & "\"
+                                currFileName = currFileInfo.Name
+
+                                tmpbytes = File_ReadAllBytes(currFilePath & currFileName)
 
                                 currFileID = Microsoft.VisualBasic.Left(currFileListEntry, InStr(currFileListEntry, ",") - 1)
 
@@ -1649,6 +1644,13 @@ Public Class MainFrm
     End Function
 
     Private Sub Des_BNDBuild_Load(sender As Object, e As EventArgs) Handles MyBase.Load
+        gameSelectBox.DataSource = New GameDef() {
+            GameDef.FRPG_win32,
+            GameDef.DemonsSoul
+        }
+
+        gameSelectBox.SelectedItem = GameDef.FRPG_win32
+
         updateUITimer.Interval = 200
         updateUITimer.Start()
 
@@ -1657,68 +1659,76 @@ Public Class MainFrm
 
         ConfigWindow = New Config()
 
-        If Not IsConfigPathValid(My.Settings.DarkSoulsDataPath) Then
-            Dim choice = MessageBox.Show("You must specify your Dark Souls DATA directory (where DARKSOULS.exe is) in order to continue. " &
-                            "This is necessary for the relative folder structure calculations to work properly. " &
-                            "Click OK to open a folder select dialog or Cancel to quit.",
-                            "Specify Dark Souls Game Folder", MessageBoxButtons.OKCancel)
+        'If Not IsConfigPathValid(My.Settings.DarkSoulsDataPath) Then
+        '    Dim choice = MessageBox.Show("You must specify your Dark Souls DATA directory (where DARKSOULS.exe is) in order to continue. " &
+        '                    "This is necessary for the relative folder structure calculations to work properly. " &
+        '                    "Click OK to open a folder select dialog or Cancel to quit.",
+        '                    "Specify Dark Souls Game Folder", MessageBoxButtons.OKCancel)
 
-            If choice = DialogResult.OK Then
+        '    If choice = DialogResult.OK Then
 
-                Dim openDlg As New FolderSelect.FolderSelectDialog() With {.Title = "Select your directory"}
+        '        Dim openDlg As New FolderSelect.FolderSelectDialog() With {.Title = "Select your directory"}
 
-                openDlg.InitialDirectory = My.Settings.FileBrowserStartingPath
+        '        openDlg.InitialDirectory = My.Settings.FileBrowserStartingPath
 
-                If openDlg.ShowDialog() Then
-                    My.Settings.DarkSoulsDataPath = openDlg.FileName
-                    My.Settings.RemoteBNDBackupPath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDBackups"
-                    My.Settings.RemoteBNDTablePath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDInfoTables"
-                    My.Settings.UseRemoteBNDBackupPath = True
-                    My.Settings.UseRemoteBNDTablePath = True
-                    My.Settings.Save()
+        '        If openDlg.ShowDialog() Then
+        '            My.Settings.DarkSoulsDataPath = openDlg.FileName
+        '            My.Settings.RemoteBNDBackupPath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDBackups"
+        '            My.Settings.RemoteBNDTablePath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDInfoTables"
+        '            My.Settings.UseRemoteBNDBackupPath = True
+        '            My.Settings.UseRemoteBNDTablePath = True
+        '            My.Settings.Save()
 
-                    Dim choice2 = MessageBox.Show("It is recommended that you select a unified data directory to keep extracted files " &
+        If Not My.Settings.FirstRun Then
+            Return
+        End If
+
+        Dim choice2 = MessageBox.Show("It is recommended that you select a unified data directory to keep extracted files " &
                             "in order to greatly reduce the amount of subfolders you need to click through." & vbCrLf & vbCrLf &
                             "Would you like to specify such a directory and enable extracting/rebuilding to/from that directory?" & vbCrLf & vbCrLf &
                             "Note: It is recommended that you put this directory in a completely separate location from your " &
                             "Dark Souls DATA directory, to avoid confusion.",
                             "Specify Custom Data Directory?", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
 
-                    If choice2 = DialogResult.Yes Then
+        If choice2 = DialogResult.Yes Then
 
-                        openDlg = New FolderSelect.FolderSelectDialog() With {.Title = "Select your custom data directory"}
+            Dim openDlg = New FolderSelect.FolderSelectDialog() With {.Title = "Select your custom data directory"}
 
-                        Dim reselectDirectory = False
+            'Dim reselectDirectory = False
 
-                        Do
+            '            Do
 
-                            If openDlg.ShowDialog() Then
-                                If openDlg.FileName = My.Settings.DarkSoulsDataPath Then
-                                    reselectDirectory = Not MessageBox.Show("Are you REALLY sure you want to have \DATA\data\ and \DATA\source\ be where your " &
-                                                    "extracted files are? It could get confusing...",
-                                                    "Really...?", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
-                                Else
-                                    reselectDirectory = False
-                                End If
-                            Else
-                                My.Settings.FileBrowserStartingPath = My.Settings.DarkSoulsDataPath
-                                Return
-                            End If
+            '                If openDlg.ShowDialog() Then
+            '                    If openDlg.FileName = My.Settings.DarkSoulsDataPath Then
+            '                        reselectDirectory = Not MessageBox.Show("Are you REALLY sure you want to have \DATA\data\ and \DATA\source\ be where your " &
+            '                                        "extracted files are? It could get confusing...",
+            '                                        "Really...?", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+            '                    Else
+            '                        reselectDirectory = False
+            '                    End If
+            '                Else
+            '        'My.Settings.FileBrowserStartingPath = My.Settings.DarkSoulsDataPath
+            '        Return
+            '                End If
 
-                        Loop While reselectDirectory
-
-                        My.Settings.CustomDataRootPath = openDlg.FileName
-                        My.Settings.UseCustomDataRootPath = True
-                        My.Settings.FileBrowserStartingPath = My.Settings.DarkSoulsDataPath
-                    End If
-
-                Else
-                    End
-                End If
-            Else
-                End
+            '            Loop While reselectDirectory
+            If openDlg.ShowDialog() Then
+                My.Settings.CustomDataRootPath = openDlg.FileName
+                My.Settings.UseCustomDataRootPath = True
+                'My.Settings.FileBrowserStartingPath = My.Settings.DarkSoulsDataPath
             End If
         End If
+
+        My.Settings.FirstRun = False
+        My.Settings.Save()
+
+        '        Else
+        '            End
+        '        End If
+        '    Else
+        '        End
+        '    End If
+        'End If
 
     End Sub
 

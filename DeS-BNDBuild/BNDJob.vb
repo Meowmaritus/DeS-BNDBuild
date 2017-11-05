@@ -21,14 +21,19 @@ Public Structure BNDJob
     Public ReadOnly Property CurrentFile As FileInfo
     Private currentFileIndex As Integer
 
+    Public ReadOnly Game As GameDef
+
     Public Sub New(ByRef pauseHandle As ManualResetEvent,
                    ByRef stopToken As CancellationToken,
                    ByRef stopRevertToken As CancellationToken,
-                   Type As BNDJobType, files As IEnumerable(Of String))
+                   Type As BNDJobType, files As IEnumerable(Of String),
+                   Game As GameDef)
 
         Me.pauseHandle = pauseHandle
         Me.stopToken = stopToken
         Me.stopRevertToken = stopRevertToken
+
+        Me.Game = Game
 
         Me.Type = Type
         FileList = files.Select(Function(f) New FileInfo(f)).ToList()
@@ -98,16 +103,29 @@ Public Structure BNDJob
         End If
     End Function
 
+    Public Function GetDataRootPathOfFile(path As String) As String
+        Try
+            Return path.Substring(0, path.LastIndexOf(Game.DataRoot) + Game.DataRoot.Length)
+        Catch ex As Exception
+            Return Nothing
+        End Try
+    End Function
+
     Public Function GetPathRelativeToDATA(path As String) As String
-        Return GetPathRelativeToRootPath(path, Settings.DarkSoulsDataPath)
+        Dim root = GetDataRootPathOfFile(path)
+        If root Is Nothing Then
+            Return Nothing
+        Else
+            Return GetPathRelativeToRootPath(path, root)
+        End If
     End Function
 
     Public Function GetPathRelativeToVanillaFRPG(path As String) As String
-        Return GetPathRelativeToRootPath(path, "N:\FRPG\")
+        Return GetPathRelativeToRootPath(path, Game.SourceRoot)
     End Function
 
     Public Function GetPathRelativeToCustomFRPG(path As String) As String
-        Return GetPathRelativeToRootPath(path, Settings.CustomDataRootPath)
+        Return GetPathRelativeToRootPath(path, $"{Settings.CustomDataRootPath.Trim("\")}\{Game.DisplayName}\")
     End Function
 
     Public Function GetFilePathWithoutExtension(path As String) As String
@@ -124,12 +142,12 @@ Public Structure BNDJob
         If Settings.UseCustomDataRootPath Then
 
             If frpgPath IsNot Nothing Then
-                Return $"{Settings.CustomDataRootPath.Trim("\")}\{frpgPath.Trim("\")}"
+                Return $"{Settings.CustomDataRootPath.Trim("\")}\{Game.DisplayName}\{frpgPath.Trim("\")}"
             Else
                 Dim dataPath = GetPathRelativeToDATA(GetFilePathWithoutExtension(CurrentFile.FullName))
 
                 If dataPath IsNot Nothing Then
-                    dataPath = $"{Settings.CustomDataRootPath.Trim("\")}\data\INTERROOT_win32\{dataPath.Trim("\")}"
+                    dataPath = $"{Settings.CustomDataRootPath.Trim("\")}\{Game.DisplayName}\data\{Game.DvdRoot}\{dataPath.Trim("\")}"
 
                     If isOnlyFile AndAlso Path.GetFileNameWithoutExtension(CurrentFile.FullName) =
                             Path.GetFileNameWithoutExtension(dataPath & $"\{internalFileName.Trim("\")}") Then
@@ -139,7 +157,7 @@ Public Structure BNDJob
                         dataPath &= $"\{internalFileName.Trim("\")}"
                     End If
                 Else
-                    dataPath = $"{Settings.CustomDataRootPath.Trim("\")}\Unknown\{CurrentFile.Name.Trim("\")}\{If(frpgPath, internalFileName).Trim("\")}"
+                    dataPath = $"{Settings.CustomDataRootPath.Trim("\")}\{Game.DisplayName}\Unknown\{CurrentFile.Name.Trim("\")}\{If(frpgPath, internalFileName).Trim("\")}"
                 End If
 
                 Return dataPath
@@ -172,37 +190,38 @@ Public Structure BNDJob
     End Function
 
     Public Function GetBNDTableFile() As FileInfo
-        If Settings.UseRemoteBNDTablePath Then
-            Return GetRemoteFilePath(CurrentFile.FullName & ".txt", Settings.DarkSoulsDataPath, Settings.RemoteBNDTablePath)
-        Else
+        Dim root = GetDataRootPathOfFile(CurrentFile.FullName)
+        If root Is Nothing Then
             Return dir(New FileInfo(CurrentFile.FullName & ".txt"))
+        Else
+            Return dir(GetRemoteFilePath(CurrentFile.FullName & ".txt", root, $"{root.Trim("\")}\BNDBuild-BNDTables\"))
+        End If
+    End Function
+
+    Public Function GetBackupFile() As FileInfo
+        Dim f As FileInfo = Nothing
+        Dim root = GetDataRootPathOfFile(CurrentFile.FullName)
+        If root Is Nothing Then
+            Return dir(New FileInfo(CurrentFile.FullName & ".bak"))
+        Else
+            Return dir(GetRemoteFilePath(CurrentFile.FullName & ".bak", root, $"{root.Trim("\")}\BNDBuild-BNDBackups\"))
         End If
     End Function
 
     Public Sub CreateBackup(file As String)
-        Dim f As FileInfo = Nothing
-        If Settings.UseRemoteBNDBackupPath Then
-            f = dir(GetRemoteFilePath(file, Settings.DarkSoulsDataPath, Settings.RemoteBNDBackupPath))
-        Else
-            f = dir(New FileInfo(file))
-        End If
+        Dim f As FileInfo = GetBackupFile()
 
-        If Not IO.File.Exists(f.FullName & ".bak") Then
-            IO.File.Copy(file, f.FullName & ".bak")
+        If Not IO.File.Exists(f.FullName) Then
+            IO.File.Copy(file, f.FullName)
         End If
 
     End Sub
 
     Public Function RestoreBackup(file As String) As Boolean
-        Dim f As FileInfo = Nothing
-        If Settings.UseRemoteBNDBackupPath Then
-            f = dir(GetRemoteFilePath(file, Settings.DarkSoulsDataPath, Settings.RemoteBNDBackupPath))
-        Else
-            f = dir(New FileInfo(file))
-        End If
+        Dim f As FileInfo = GetBackupFile()
 
-        If IO.File.Exists(f.FullName & ".bak") Then
-            IO.File.Copy(f.FullName & ".bak", f.FullName, True)
+        If IO.File.Exists(f.FullName) Then
+            IO.File.Copy(f.FullName, file, True)
             Return True
         Else
             Return False
