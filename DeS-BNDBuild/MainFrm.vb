@@ -1671,7 +1671,47 @@ Public Class MainFrm
 
                 If openDlg.ShowDialog() Then
                     My.Settings.DarkSoulsDataPath = openDlg.FileName
+                    My.Settings.RemoteBNDBackupPath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDBackups"
+                    'My.Settings.RemoteBNDTablePath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDInfoTables"
+                    My.Settings.UseRemoteBNDBackupPath = True
+                    'My.Settings.UseRemoteBNDTablePath = True
                     My.Settings.Save()
+
+                    Dim choice2 = MessageBox.Show("It is recommended that you select a unified data directory to keep extracted files " &
+                            "in order to greatly reduce the amount of subfolders you need to click through." & vbCrLf & vbCrLf &
+                            "Would you like to specify such a directory and enable extracting/rebuilding to/from that directory?" & vbCrLf & vbCrLf &
+                            "Note: It is recommended that you put this directory in a completely separate location from your " &
+                            "Dark Souls DATA directory, to avoid confusion.",
+                            "Specify Custom Data Directory?", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+
+                    If choice2 = DialogResult.Yes Then
+
+                        openDlg = New FolderSelect.FolderSelectDialog() With {.Title = "Select your custom data directory"}
+
+                        Dim reselectDirectory = False
+
+                        Do
+
+                            If openDlg.ShowDialog() Then
+                                If openDlg.FileName = My.Settings.DarkSoulsDataPath Then
+                                    reselectDirectory = Not MessageBox.Show("Are you REALLY sure you want to have \DATA\data\ and \DATA\source\ be where your " &
+                                                    "extracted files are? It could get confusing...",
+                                                    "Really...?", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
+                                Else
+                                    reselectDirectory = False
+                                End If
+                            Else
+                                My.Settings.FileBrowserStartingPath = My.Settings.DarkSoulsDataPath
+                                Return
+                            End If
+
+                        Loop While reselectDirectory
+
+                        My.Settings.CustomDataRootPath = openDlg.FileName
+
+                        My.Settings.FileBrowserStartingPath = My.Settings.DarkSoulsDataPath
+                    End If
+
                 Else
                     End
                 End If
