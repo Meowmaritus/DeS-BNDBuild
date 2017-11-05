@@ -5,9 +5,13 @@ Imports System.IO.Compression
 Imports System.Threading
 
 Public Class MainFrm
+    Public Shared ReadOnly VALID_BND_EXTENSIONS() As String = {"BND", "MOWB", "DCX", "TPF", "BHD5", "BHD"}
+
     Public Const COMMENT_STR = ">"
     Public Const FRPG_ROOT = "N:\FRPG\"
     Public Const DATA_ROOT = "\DATA\"
+
+    Public Shared CURRENT_JOB_TYPE As BNDJobType
 
     Public Shared bytes() As Byte
     Public Shared filename As String
@@ -31,7 +35,7 @@ Public Class MainFrm
     Public Shared WorkEndTrigger As New EventWaitHandle(False, EventResetMode.AutoReset)
     Private WorkEndTriggerThread As Thread
 
-    Public Shared outputList As New List(Of String)
+    Public Shared outputList As New Queue(Of String)
 
     Private WithEvents updateUITimer As New System.Windows.Forms.Timer()
 
@@ -39,22 +43,27 @@ Public Class MainFrm
 
     Public Sub PrintLn(Optional txt As String = "")
         SyncLock outputLock
-            outputList.Add($"{TimeOfDay.ToLongTimeString()} - {txt}{vbCrLf}")
+            outputList.Enqueue($"{TimeOfDay.ToLongTimeString()} - {txt}{vbCrLf}")
         End SyncLock
     End Sub
 
-    Private Function EncodeFileName(ByVal filename As String) As Byte()
-        Return ShiftJISEncoding.GetBytes(filename)
+    Public Sub PrintLnErr(Optional txt As String = "")
+        'TODO: MAKE ERRORS MORE OBVIOUS
+        SyncLock outputLock
+            outputList.Enqueue($"{TimeOfDay.ToLongTimeString()} - {txt}{vbCrLf}")
+        End SyncLock
+    End Sub
+
+    Private Function GetEncoded(ByVal txt As String) As Byte()
+        Return ShiftJISEncoding.GetBytes(txt)
     End Function
 
-    Private Sub EncodeFileName(ByVal filename As String, ByVal loc As UInteger)
+    Private Function EncodeFileName(ByVal filename As String, ByVal loc As UInteger) As Byte()
         'Insert string directly to main byte array
-        Dim BArr() As Byte
-
-        BArr = ShiftJISEncoding.GetBytes(filename)
-
+        Dim BArr = GetEncoded(filename)
         Array.Copy(BArr, 0, bytes, loc, BArr.Length)
-    End Sub
+        Return BArr
+    End Function
 
     Private Function DecodeFileName(ByVal loc As UInteger) As String
         Dim b As New System.Collections.Generic.List(Of Byte)
@@ -163,8 +172,23 @@ Public Class MainFrm
 
                 btnAddDirectory.Enabled = Not disabled
                 btnAddFiles.Enabled = Not disabled
+
                 btnExtract.Enabled = Not disabled
                 btnRebuild.Enabled = Not disabled
+                btnRestoreBackups.Enabled = Not disabled
+
+                btnExtract.Visible = Not disabled
+                btnRebuild.Visible = Not disabled
+                btnRestoreBackups.Visible = Not disabled
+
+                progressBar.Enabled = disabled
+                progressBar.Visible = disabled
+
+                UseWaitCursor = disabled
+
+                btnSaveList.Enabled = Not disabled
+                btnLoadList.Enabled = Not disabled
+
                 ConfigWindow.propertyGridSettings.Enabled = Not disabled
                 ConfigWindow.btnSaveConfig.Enabled = Not disabled
                 ConfigWindow.btnReloadConfig.Enabled = Not disabled
@@ -176,12 +200,12 @@ Public Class MainFrm
             End Sub)
     End Sub
 
-    Private Function GetBndFilesCleaned() As List(Of String)
+    Private Function GetBndFilesCleaned(inputFileList As IEnumerable(Of String)) As List(Of String)
         Dim result As New List(Of String)()
 
         Dim commentStartIndex As Integer = -1
 
-        For Each line In txtBNDfile.Lines
+        For Each line In inputFileList
             Dim actualLine As String = line
             commentStartIndex = line.IndexOf(COMMENT_STR)
             If commentStartIndex >= 0 Then
@@ -194,8 +218,15 @@ Public Class MainFrm
                 If File.Exists(actualLine) Then
                     result.Add(actualLine)
                 Else
-                    PrintLn($"File '{actualLine}' does not exist.")
+                    If MessageBox.Show($"File '{actualLine}' does not exist and will be ignored.",
+                        "Warning", MessageBoxButtons.OKCancel,
+                                       MessageBoxIcon.Warning) = DialogResult.Cancel Then
+
+                        Return Nothing
+
+                    End If
                 End If
+
             End If
         Next
 
@@ -215,6 +246,8 @@ Public Class MainFrm
         Select Case Job.Type
             Case BNDJobType.Extract : work = AddressOf EXTRACT
             Case BNDJobType.Rebuild : work = AddressOf REBUILD
+            Case BNDJobType.RestoreBackups : work = AddressOf RESTORE_BACKUPS
+            Case Else : Throw New Exception($"Job '{Job.Type}' not programmed in.")
         End Select
 
         If work IsNot Nothing Then
@@ -248,22 +281,48 @@ Public Class MainFrm
     End Sub
 
     Private Function StartNewBNDJobThread(Job As BNDJob) As Thread
-        Dim jobThread = New Thread(AddressOf BNDJobThreadStart) With {.IsBackground = True}
+        Dim jobThread = New Thread(AddressOf BNDJobThreadStart) With {.IsBackground = False}
         jobThread.Start(Job)
         Return jobThread
     End Function
 
     Private Sub START_JOB(type As BNDJobType)
+        Dim fileList = GetBndFilesCleaned(txtBNDfile.Lines)
+
+        If fileList Is Nothing Then
+            Return
+        ElseIf fileList.Count = 0 Then
+            MessageBox.Show("File list contains no valid BND file paths; operation cancelled.", "Notice",
+                MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
+        progressBar.Minimum = 0
+        progressBar.Value = 0
+        progressBar.Maximum = fileList.Count
+
         SetGUIDisabled(True)
         BNDJobPauseHandle = New ManualResetEvent(True)
         BNDJobTokenSourceCancel = New CancellationTokenSource()
         BNDJobTokenSourceRevertCancel = New CancellationTokenSource()
         BndThread?.Abort()
-        BndThread = StartNewBNDJobThread(
-            New BNDJob(BNDJobPauseHandle,
+        CURRENT_JOB_TYPE = type
+
+        Dim nextJob = New BNDJob(BNDJobPauseHandle,
                        BNDJobTokenSourceCancel.Token,
                        BNDJobTokenSourceRevertCancel.Token,
-                       type, GetBndFilesCleaned()))
+                       type, fileList)
+
+        AddHandler nextJob.OnFinishItem, AddressOf CurrentJob_OnFinishItem
+
+        BndThread = StartNewBNDJobThread(nextJob)
+    End Sub
+
+    Private Sub CurrentJob_OnFinishItem()
+        Invoke(
+        Sub()
+            progressBar.Increment(1)
+        End Sub)
     End Sub
 
     Private Sub btnExtract_Click(sender As Object, e As EventArgs) Handles btnExtract.Click
@@ -272,6 +331,18 @@ Public Class MainFrm
 
     Private Sub btnRebuild_Click(sender As Object, e As EventArgs) Handles btnRebuild.Click
         START_JOB(BNDJobType.Rebuild)
+    End Sub
+
+    Private Sub RESTORE_BACKUPS(Job As BNDJob)
+        If Job.RestoreBackup(Job.CurrentFile.FullName) Then
+
+            If My.Settings.EnableVerboseOutput Then
+                PrintLn($"Restored backup of '{Job.CurrentFile.Name}'")
+            End If
+
+        Else
+            PrintLnErr($"Could not find backup of '{Job.CurrentFile.Name}'.")
+        End If
     End Sub
 
     Private Sub EXTRACT(Job As BNDJob)
@@ -311,14 +382,15 @@ Public Class MainFrm
             filepath = Microsoft.VisualBasic.Left(BND, InStrRev(BND, "\"))
             filename = Microsoft.VisualBasic.Right(BND, BND.Length - filepath.Length)
 
-            bytes = File.ReadAllBytes(filepath & filename)
+            bytes = File_ReadAllBytes(filepath & filename)
 
             Job.CreateBackup(filepath & filename)
 
-            PrintLn("Beginning extraction.")
+            'PrintLn("Beginning extraction.")
 
             Select Case Microsoft.VisualBasic.Left(StrFromBytes(0), 4)
                 Case "BHD5"
+#Region "Extract BHD5"
                     bigEndian = False
                     If Not (UIntFromBytes(&H4) And &HFF) = &HFF Then
                         bigEndian = True
@@ -416,7 +488,10 @@ Public Class MainFrm
                             End If
 
                             File.WriteAllBytes(currFileName, currFileBytes)
-                            PrintLn($"Extracted {currFileName}.")
+
+                            If My.Settings.EnableVerboseOutput Then
+                                PrintLn($"Extracted '{currFileName}'.")
+                            End If
 
                             bhdOffSet += &H10
                         Next
@@ -425,8 +500,9 @@ Public Class MainFrm
                     filename = filename & ".bhd5"
                     BDTStream.Close()
                     BDTStream.Dispose()
-
+#End Region
                 Case "BHF3"
+#Region "Extract BHF3"
                     fileList = "BHF3,"
 
                     REM this assumes we'll always have between 1 and 16777215 files
@@ -491,7 +567,9 @@ Public Class MainFrm
                     filename = filename & "bhd"
                     BDTStream.Close()
                     BDTStream.Dispose()
+#End Region
                 Case "BND3"
+#Region "Extract BND3"
                     'TODO:  DeS, c0300.anibnd, no files found?
                     Dim currFileSize As UInteger = 0
                     Dim currFileOffset As UInteger = 0
@@ -510,7 +588,7 @@ Public Class MainFrm
                     fileList = BinderID & Environment.NewLine & flags & Environment.NewLine
 
                     If numFiles = 0 Then
-                        MsgBox("Warning: No files found in archive '" & BND & "'.")
+                        PrintLnErr("Warning: No files found in archive '" & BND & "'.")
                         Exit Sub
                     End If
 
@@ -587,7 +665,9 @@ Public Class MainFrm
                         Array.Copy(bytes, currFileOffset, currFileBytes, 0, currFileSize)
                         File.WriteAllBytes(currFilePath & currFileName, currFileBytes)
                     Next
+#End Region
                 Case "TPF"
+#Region "Extract TPF"
                     Dim currFileSize As UInteger = 0
                     Dim currFileOffset As UInteger = 0
                     Dim currFileID As UInteger = 0
@@ -610,6 +690,9 @@ Public Class MainFrm
 
                         BinderID = Microsoft.VisualBasic.Left(StrFromBytes(&H0), 3)
                         numFiles = UIntFromBytes(&H8)
+
+                        Dim isOnlyOneTexture = (numFiles = 1)
+
                         currFileNameOffset = UIntFromBytes(&H10)
 
                         fileList = BinderID & Environment.NewLine & flags & Environment.NewLine
@@ -625,7 +708,7 @@ Public Class MainFrm
                             currFileName = DecodeFileName(currFileNameOffset)
                             fileList += currFileFlags1 & "," & currFileFlags2 & "," & currFileName & Environment.NewLine
 
-                            currFileInfo = Job.GetExtractedFile(currFileName)
+                            currFileInfo = Job.GetExtractedFile(currFileName, isOnlyOneTexture)
                             currFilePath = currFileInfo.DirectoryName & "\"
                             currFileName = currFileInfo.Name
 
@@ -643,6 +726,8 @@ Public Class MainFrm
                         BinderID = Microsoft.VisualBasic.Left(StrFromBytes(&H0), 3)
                         numFiles = UIntFromBytes(&H8)
 
+                        Dim isOnlyOneTexture = (numFiles = 1)
+
                         fileList = BinderID & Environment.NewLine & flags & Environment.NewLine
 
                         For i As UInteger = 0 To numFiles - 1
@@ -657,7 +742,7 @@ Public Class MainFrm
                             currFileName = DecodeFileName(currFileNameOffset) & ".dds"
                             fileList += currFileFlags1 & "," & currFileFlags2 & "," & currFileName & Environment.NewLine
 
-                            currFileInfo = Job.GetExtractedFile(currFileName)
+                            currFileInfo = Job.GetExtractedFile(currFileName, isOnlyOneTexture)
                             currFilePath = currFileInfo.DirectoryName & "\"
                             currFileName = currFileInfo.Name
 
@@ -672,10 +757,12 @@ Public Class MainFrm
                     Else
                         Throw New Exception("Unknown TPF Format")
                     End If
-
+#End Region
                 Case "DCX"
+
                     Select Case StrFromBytes(&H28)
                         Case "EDGE"
+#Region "Extract DCX - EDGE"
                             DCX = True
                             Dim newbytes(&H10000) As Byte
                             Dim decbytes(&H10000) As Byte
@@ -710,7 +797,9 @@ Public Class MainFrm
                             End If
 
                             File.WriteAllBytes(currFileName, bytes2)
+#End Region
                         Case "DFLT"
+#Region "Extract DCX - DFLT"
                             DCX = True
                             Dim startOffset As UInteger = UIntFromBytes(&H14) + &H22
 
@@ -734,17 +823,20 @@ Public Class MainFrm
                             End If
 
                             File.WriteAllBytes(currFileName, decbytes)
-
+#End Region
                     End Select
 
             End Select
 
             File.WriteAllText(Job.GetBNDTableFile().FullName, fileList)
 
-            PrintLn($"{filename} extracted.")
+            If My.Settings.EnableVerboseOutput Then
+                PrintLn($"{filename} extracted.")
+            End If
+
 #If Not NO_ERR_HANDLING Then
         Catch ex As Exception
-            PrintLn($"An exception was encountered while extracting '{Job.CurrentFile}': '{ex.Message}'")
+            PrintLnErr($"{vbCrLf}Encountered an error while extracting '{Job.CurrentFile.Name}':{vbCrLf}{vbTab}{ex.Message}{vbCrLf}")
         End Try
 #End If
 
@@ -795,10 +887,14 @@ Public Class MainFrm
 
             DCX = (Microsoft.VisualBasic.Right(filename, 4).ToLower = ".dcx")
 
-            fileList = File.ReadAllLines(Job.GetBNDTableFile().FullName)
+            fileList = File_ReadAllLines(Job.GetBNDTableFile().FullName).Where(
+                Function(line)
+                    Return (Not String.IsNullOrWhiteSpace(line.Trim()))
+                End Function).ToArray()
 
             Select Case Microsoft.VisualBasic.Left(fileList(0), 4)
                 Case "BHD5"
+#Region "Rebuild BHD5"
                     BinderID = fileList(0).Split(",")(1)
                     flags = fileList(1)
                     numFiles = fileList.Length - 2
@@ -899,10 +995,12 @@ Public Class MainFrm
 
                     BDTStream.Close()
                     BDTStream.Dispose()
-
-                    PrintLn($"{BDTFilename} rebuilt.")
-
+                    If My.Settings.EnableVerboseOutput Then
+                        PrintLn($"{BDTFilename} rebuilt.")
+                    End If
+#End Region
                 Case "BHF3"
+#Region "Rebuild BHF3"
                     BinderID = fileList(0).Split(",")(1)
                     flags = fileList(1)
                     numFiles = fileList.Length - 2
@@ -972,8 +1070,13 @@ Public Class MainFrm
                     BDTStream.Close()
                     BDTStream.Dispose()
 
-                    PrintLn($"{BDTFilename} rebuilt.")
+                    If My.Settings.EnableVerboseOutput Then
+                        PrintLn($"{BDTFilename} rebuilt.")
+                    End If
+
+#End Region
                 Case "BND3"
+#Region "Rebuild BND3"
                     ReDim bytes(&H1F)
                     StrToBytes(fileList(0), 0)
 
@@ -981,25 +1084,29 @@ Public Class MainFrm
                     numFiles = fileList.Length - 2
 
                     For i = 2 To fileList.Length - 1
-                        namesEndLoc += EncodeFileName(fileList(i)).Length - InStr(fileList(i), ",") + 1
+                        'TODO: REDUCE FILE NAME ENCODING REDUNDANCY
+                        namesEndLoc += GetEncoded(fileList(i)).Length - InStr(fileList(i), ",") + 1
                     Next
 
                     Select Case flags
+                        Case &H70000000
+                            currFileNameOffset = &H20 + &H14 * numFiles
+                            namesEndLoc += currFileNameOffset
                         Case &H74000000, &H54000000
                             currFileNameOffset = &H20 + &H18 * numFiles
-                            namesEndLoc += &H20 + &H18 * numFiles
+                            namesEndLoc += currFileNameOffset
                         Case &H10100
-                            namesEndLoc = &H20 + &HC * numFiles
+                            namesEndLoc = &H30 + &HC * numFiles
                         Case &HE010100
                             currFileNameOffset = &H20 + &H14 * numFiles
-                            namesEndLoc += &H20 + &H14 * numFiles
+                            namesEndLoc += currFileNameOffset
                         Case &H2E010100
                             currFileNameOffset = &H20 + &H18 * numFiles
-                            namesEndLoc += &H20 + &H18 * numFiles
+                            namesEndLoc += currFileNameOffset
                     End Select
 
                     UIntToBytes(flags, &HC)
-                    If flags = &H74000000 Or flags = &H54000000 Then bigEndian = False
+                    If flags = &H74000000 Or flags = &H54000000 Or flags = &H70000000 Then bigEndian = False
 
                     UIntToBytes(numFiles, &H10)
                     UIntToBytes(namesEndLoc, &H14)
@@ -1019,6 +1126,43 @@ Public Class MainFrm
                         currFileListEntry = fileList(i + 2)
 
                         Select Case flags
+                            Case &H70000000
+
+                                currFileName = currFileListEntry.Substring(currFileListEntry.IndexOf(",") + 1)
+
+                                currFileInfo = Job.GetExtractedFile(currFileName)
+                                currFilePath = currFileInfo.DirectoryName & "\"
+                                currFileName = currFileInfo.Name
+
+                                tmpbytes = File_ReadAllBytes(currFilePath & currFileName)
+                                currFileID = Microsoft.VisualBasic.Left(currFileListEntry, InStr(currFileListEntry, ",") - 1)
+
+                                UIntToBytes(&H40, &H20 + i * &H14)
+                                UIntToBytes(tmpbytes.Length, &H24 + i * &H14)
+                                UIntToBytes(currFileOffset, &H28 + i * &H14)
+                                UIntToBytes(currFileID, &H2C + i * &H14)
+                                UIntToBytes(currFileNameOffset, &H30 + i * &H14)
+
+                                If tmpbytes.Length Mod &H10 > 0 Then
+                                    padding = &H10 - (tmpbytes.Length Mod &H10)
+                                Else
+                                    padding = 0
+                                End If
+                                If i = numFiles - 1 Then padding = 0
+                                ReDim Preserve bytes(bytes.Length + tmpbytes.Length + padding - 1)
+
+                                InsBytes(tmpbytes, currFileOffset)
+
+                                currFileOffset += tmpbytes.Length
+                                If currFileOffset Mod &H10 > 0 Then
+                                    padding = &H10 - (currFileOffset Mod &H10)
+                                Else
+                                    padding = 0
+                                End If
+                                currFileOffset += padding
+
+                                currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset).Length + 1
+
                             Case &H74000000, &H54000000
                                 currFileName = currFileListEntry.Substring(currFileListEntry.IndexOf(",") + 1)
 
@@ -1026,7 +1170,7 @@ Public Class MainFrm
                                 currFilePath = currFileInfo.DirectoryName & "\"
                                 currFileName = currFileInfo.Name
 
-                                tmpbytes = File.ReadAllBytes(currFilePath & currFileName)
+                                tmpbytes = File_ReadAllBytes(currFilePath & currFileName)
                                 currFileID = Microsoft.VisualBasic.Left(currFileListEntry, InStr(currFileListEntry, ",") - 1)
 
                                 UIntToBytes(&H40, &H20 + i * &H18)
@@ -1054,8 +1198,7 @@ Public Class MainFrm
                                 End If
                                 currFileOffset += padding
 
-                                EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset)
-                                currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ",")))).Length + 1
+                                currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset).Length + 1
                             Case &H10100
                                 currFileName = currFileListEntry
 
@@ -1065,7 +1208,7 @@ Public Class MainFrm
                                 currFilePath = currFileInfo.DirectoryName & "\"
                                 currFileName = currFileInfo.Name
 
-                                tmpbytes = File.ReadAllBytes(currFilePath & currFileName)
+                                tmpbytes = File_ReadAllBytes(currFilePath & currFileName)
                                 currFileSize = tmpbytes.Length
 
                                 If currFileSize Mod &H10 > 0 And i < numFiles - 1 Then
@@ -1092,7 +1235,7 @@ Public Class MainFrm
                                 currFilePath = currFileInfo.DirectoryName & "\"
                                 currFileName = currFileInfo.Name
 
-                                tmpbytes = File.ReadAllBytes(currFileName)
+                                tmpbytes = File_ReadAllBytes(currFileName)
                                 currFileID = Microsoft.VisualBasic.Left(currFileListEntry, InStr(currFileListEntry, ",") - 1)
 
                                 UIntToBytes(&H2000000, &H20 + i * &H14)
@@ -1119,8 +1262,7 @@ Public Class MainFrm
                                 End If
                                 currFileOffset += padding
 
-                                EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset)
-                                currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ",")))).Length + 1
+                                currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset).Length + 1
                             Case &H2E010100
 
                                 If frpg Then
@@ -1132,7 +1274,7 @@ Public Class MainFrm
                                     currFileName = filepath & filename & ".extract\" & Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ",") + 3))
                                 End If
 
-                                tmpbytes = File.ReadAllBytes(currFileName)
+                                tmpbytes = File_ReadAllBytes(currFileName)
 
                                 currFileID = Microsoft.VisualBasic.Left(currFileListEntry, InStr(currFileListEntry, ",") - 1)
 
@@ -1161,11 +1303,12 @@ Public Class MainFrm
                                 End If
                                 currFileOffset += padding
 
-                                EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset)
-                                currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ",")))).Length + 1
+                                currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStr(currFileListEntry, ","))), currFileNameOffset).Length + 1
                         End Select
                     Next
+#End Region
                 Case "TPF"
+#Region "Rebuild TPF"
                     'TODO:  Handle m10_9999 (PC) format
                     Dim currFileFlags1
                     Dim currFileFlags2
@@ -1174,6 +1317,8 @@ Public Class MainFrm
                     StrToBytes(fileList(0), 0)
 
                     flags = fileList(1)
+
+                    Dim isOnlyOneTexture = fileList.Length <= 3
 
                     If flags = &H2010200 Or flags = &H201000 Then
                         ' Demon's Souls
@@ -1186,7 +1331,10 @@ Public Class MainFrm
                         namesEndLoc = &H10 + numFiles * &H20
 
                         For i = 2 To fileList.Length - 1
-                            namesEndLoc += EncodeFileName(fileList(i)).Length - InStrRev(fileList(i), ",") + 1
+                            'Gonna borrow 'currFileListEntry' for a bit here to make this more readable lol
+                            currFileListEntry = fileList(i).Substring(currFileListEntry.LastIndexOf(",") + 1)
+                            'TODO: REDUCE FILE NAME ENCODING REDUNDANCY
+                            namesEndLoc += GetEncoded(currFileListEntry).Length + 1
                         Next
 
                         UIntToBytes(numFiles, &H8)
@@ -1209,13 +1357,13 @@ Public Class MainFrm
 
                             currFileListEntry = fileList(i + 2)
 
-                            currFileName = currFileListEntry.Substring(currFileListEntry.IndexOf(",") + 1)
+                            currFileName = currFileListEntry.Substring(currFileListEntry.LastIndexOf(",") + 1)
 
-                            currFileInfo = Job.GetExtractedFile(currFileName)
+                            currFileInfo = Job.GetExtractedFile(currFileName, isOnlyOneTexture)
                             currFilePath = currFileInfo.DirectoryName & "\"
                             currFileName = currFileInfo.Name
 
-                            tmpbytes = File.ReadAllBytes(currFileName)
+                            tmpbytes = File_ReadAllBytes(currFileName)
 
                             currFileSize = tmpbytes.Length
                             If currFileSize Mod &H10 > 0 Then
@@ -1240,11 +1388,11 @@ Public Class MainFrm
                             currFileOffset += currFileSize + padding
                             totalFileSize += currFileSize
 
-                            EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStrRev(currFileListEntry, ","))), currFileNameOffset)
-                            currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStrRev(currFileListEntry, ",")))).Length + 1
+                            currFileNameOffset += EncodeFileName(Microsoft.VisualBasic.Right(currFileListEntry, currFileListEntry.Length - (InStrRev(currFileListEntry, ","))), currFileNameOffset).Length + 1
                         Next
 
                         UIntToBytes(totalFileSize, &H4)
+
                     ElseIf flags = &H20300 Then
                         ' Dark Souls
                         'TODO:  Fix this endian check in particular.
@@ -1259,7 +1407,8 @@ Public Class MainFrm
                             currFileName = fileList(i)
                             currFileName = currFileName.Substring(currFileName.LastIndexOf(","))
                             currFileName = currFileName.Substring(0, currFileName.Length - ".dds".Length)
-                            namesEndLoc += EncodeFileName(currFileName).Length + 1
+                            'TODO: REDUCE FILE NAME ENCODING REDUNDANCY
+                            namesEndLoc += GetEncoded(currFileName).Length + 1
                         Next
 
                         UIntToBytes(numFiles, &H8)
@@ -1280,13 +1429,13 @@ Public Class MainFrm
 
                             currFileListEntry = fileList(i + 2)
 
-                            currFileName = currFileListEntry.Substring(currFileListEntry.IndexOf(",") + 1)
+                            currFileName = currFileListEntry.Substring(currFileListEntry.LastIndexOf(",") + 1)
 
-                            currFileInfo = Job.GetExtractedFile(currFileName)
+                            currFileInfo = Job.GetExtractedFile(currFileName, isOnlyOneTexture)
                             currFilePath = currFileInfo.DirectoryName & "\"
                             currFileName = currFileInfo.Name
 
-                            tmpbytes = File.ReadAllBytes(currFilePath & currFileName)
+                            tmpbytes = File_ReadAllBytes(currFilePath & currFileName)
 
                             currFileSize = tmpbytes.Length
                             If currFileSize Mod &H10 > 0 Then
@@ -1313,20 +1462,20 @@ Public Class MainFrm
                             totalFileSize += currFileSize
 
                             currFileName = currFileName.Substring(0, currFileName.Length - ".dds".Length)
-                            EncodeFileName(currFileName, currFileNameOffset)
-                            currFileNameOffset += EncodeFileName(currFileName).Length + 1
+                            currFileNameOffset += EncodeFileName(currFileName, currFileNameOffset).Length + 1
                         Next
 
                         UIntToBytes(totalFileSize, &H4)
                     End If
-
+#End Region
                 Case "EDGE"
+#Region "Rebuild EDGE"
                     Dim chunkBytes(&H10000) As Byte
                     Dim cmpChunkBytes() As Byte
                     Dim zipBytes() As Byte = {}
 
                     currFileName = filepath + fileList(1)
-                    tmpbytes = File.ReadAllBytes(currFileName)
+                    tmpbytes = File_ReadAllBytes(currFileName)
 
                     currFileSize = tmpbytes.Length
 
@@ -1403,12 +1552,14 @@ Public Class MainFrm
                     UIntToBytes(&H100000, &H6C)
 
                     Array.Copy(zipBytes, 0, bytes, &H70 + chunks * &H10, zipBytes.Length)
+#End Region
                 Case "DFLT"
+#Region "Rebuild DFLT"
                     Dim cmpBytes() As Byte
                     Dim zipBytes() As Byte = {}
 
                     currFileName = filepath + fileList(1)
-                    tmpbytes = File.ReadAllBytes(currFileName)
+                    tmpbytes = File_ReadAllBytes(currFileName)
 
                     currFileSize = tmpbytes.Length
 
@@ -1438,14 +1589,17 @@ Public Class MainFrm
                     UIntToBytes(&H78DA0000, &H4C)
 
                     Array.Copy(cmpBytes, 0, bytes, &H4E, cmpBytes.Length)
-
+#End Region
             End Select
             File.WriteAllBytes(filepath & filename, bytes)
 
-            PrintLn($"{filename} rebuilt.")
+            If My.Settings.EnableVerboseOutput Then
+                PrintLn($"Rebuilt '{filename}'.")
+            End If
+
 #If Not NO_ERR_HANDLING Then
         Catch ex As Exception
-            PrintLn($"An exception was encountered while extracting '{Job.CurrentFile}': '{ex.Message}'")
+            PrintLnErr($"{vbCrLf}Encountered an error while rebuilding '{Job.CurrentFile.Name}':{vbCrLf}{vbTab}{ex.Message}{vbCrLf}")
         End Try
 #End If
 
@@ -1555,9 +1709,9 @@ Public Class MainFrm
 
             Dim elapsedTime = Now.Subtract(timeStart)
 
-            PrintLn()
             PrintLn($" >> Finished in {elapsedTime}. <<")
-            PrintLn()
+
+            CURRENT_JOB_TYPE = BNDJobType.None
 
             'Rinse and repeat
         End While
@@ -1568,19 +1722,60 @@ Public Class MainFrm
 
         SyncLock outputLock
             While outputList.Count > 0
-                txtInfo.AppendText(outputList(0))
-                outputList.RemoveAt(0)
+                txtInfo.AppendText(outputList.Dequeue())
                 txtInfo.ScrollToCaret() 'How DARE you forget to include this, Wulf?!
             End While
         End SyncLock
 
-        If txtInfo.Lines.Count > 10000 Then
-            txtInfo.Lines = txtInfo.Lines.Skip(9000).ToArray
-            txtInfo.ScrollToCaret()
-        End If
+        'Commented out for now because user can toggle verbosity as well as manually clear the output box:
+
+        'If txtInfo.Lines.Count > 10000 Then
+        '    txtInfo.Lines = txtInfo.Lines.Skip(9000).ToArray
+        '    txtInfo.ScrollToCaret()
+        'End If
     End Sub
 
+    Private Function FilterFileList(files As IEnumerable(Of String), NewFilesOnly As Boolean) As String
+
+        files = GetBndFilesCleaned(files)
+
+        If files Is Nothing Then
+            Return Nothing
+        End If
+
+        Dim upper = ""
+
+        Dim curFilesCaseless As IEnumerable(Of String) = Nothing
+
+        If NewFilesOnly Then
+            curFilesCaseless = txtBNDfile.Lines.
+                Select(Function(x) x.Trim().ToUpper()).
+                Where(Function(y) Not String.IsNullOrWhiteSpace(y))
+        Else
+            curFilesCaseless = New List(Of String)()
+        End If
+
+        Return String.Join(vbLf, files.Where(
+            Function(f)
+                upper = f.ToUpper()
+                Return VALID_BND_EXTENSIONS.Any(Function(x) upper.EndsWith(x.ToUpper())) AndAlso
+                        Not curFilesCaseless.Contains(upper.Trim())
+                'If newFilesOnly is false then curFilesCaseless will be empty, 
+                'thus allowing all files to be added
+            End Function))
+
+    End Function
+
     Private Sub AddFiles(files As IEnumerable(Of String))
+
+        Dim filesToAdd = FilterFileList(files, NewFilesOnly:=True)
+
+        If filesToAdd Is Nothing Then
+            MessageBox.Show("No valid files; nothing added to file list.", "Notice",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
         Dim oldSelLen = txtBNDfile.SelectionLength
         Dim oldSelStart = txtBNDfile.SelectionStart
 
@@ -1600,26 +1795,10 @@ Public Class MainFrm
                 txtBNDfile.SelectionStart = txtBNDfile.GetFirstCharIndexOfCurrentLine()
                 txtBNDfile.SelectedText = ""
             End If
-
-            curFilesCaseless = txtBNDfile.Lines.
-                    Select(Function(x) x.Trim().ToUpper()).
-                    Where(Function(y) Not String.IsNullOrWhiteSpace(y))
-        Else
-            curFilesCaseless = New List(Of String)()
         End If
 
-        Dim upper = ""
-        txtBNDfile.AppendText(String.Join(vbLf, files.Where(
-            Function(f)
-                upper = f.ToUpper()
-                Return (upper.EndsWith("BND") OrElse
-                        upper.EndsWith("MOWB") OrElse
-                        upper.EndsWith("DCX") OrElse
-                        upper.EndsWith("TPF") OrElse
-                        upper.EndsWith("BHD5") OrElse
-                        upper.EndsWith("BHD")) AndAlso
-                        (Not curFilesCaseless.Contains(upper.Trim()))
-            End Function)))
+
+        txtBNDfile.AppendText(filesToAdd)
 
         txtBNDfile.SelectionStart = oldSelStart
         txtBNDfile.SelectionLength = oldSelLen
@@ -1669,19 +1848,24 @@ Public Class MainFrm
     End Sub
 
     Private Sub btnCancel_Click(sender As Object, e As EventArgs) Handles btnCancel.Click
+        DO_CANCEL()
+    End Sub
+
+    Private Function DO_CANCEL() As Boolean
+        Dim result As Boolean = False
         'Pause extraction
         BNDJobPauseHandle.Reset()
 
-        Dim choice = MessageBox.Show("Would you like to undo the entire operation and revert the file trees to their original states?", "Revert Progress?", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question)
+        Dim choice = MessageBox.Show("Would you like to cancel the current operation?", "Cancel?", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
 
         If choice = DialogResult.Yes Then
-            BNDJobTokenSourceRevertCancel.Cancel()
-        ElseIf choice = DialogResult.No Then
             BNDJobTokenSourceCancel.Cancel()
+            result = True
         End If
 
         BNDJobPauseHandle.Set()
-    End Sub
+        Return result
+    End Function
 
     Private Sub btnOpenConfigWindow_Click(sender As Object, e As EventArgs) Handles btnOpenConfigWindow.Click
         btnOpenConfigWindow.Enabled = False
@@ -1697,4 +1881,87 @@ Public Class MainFrm
 
     End Sub
 
+    Private Sub btnClearOutput_Click(sender As Object, e As EventArgs) Handles btnClearOutput.Click
+        txtInfo.ResetText()
+    End Sub
+
+    Private Sub btnSaveList_Click(sender As Object, e As EventArgs) Handles btnSaveList.Click
+        Dim curFileList = FilterFileList(txtBNDfile.Lines, NewFilesOnly:=False)
+
+        If curFileList Is Nothing Then
+            Return
+        ElseIf String.IsNullOrWhiteSpace(curFileList.Trim()) Then
+            MessageBox.Show("File list contains no valid BND file paths; operation cancelled.", "Notice",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information)
+            Return
+        End If
+
+        Dim openDlg As New SaveFileDialog() With {
+            .CheckFileExists = False,
+            .CheckPathExists = False,
+            .DefaultExt = "wulfbndl",
+            .Filter = "Wulf BND File List (*.wulfbndl)|*.wulfbndl|All files (*.*)|*.*",
+            .SupportMultiDottedExtensions = True,
+            .Title = "Save file list..."
+        }
+
+        openDlg.InitialDirectory = My.Settings.FileBrowserStartingPath
+
+        If openDlg.ShowDialog() = Windows.Forms.DialogResult.OK Then
+            Dim dir = New FileInfo(openDlg.FileName).DirectoryName
+
+            If Not Directory.Exists(dir) Then
+                Directory.CreateDirectory(dir)
+            End If
+
+            File.WriteAllText(openDlg.FileName, txtBNDfile.Text)
+        End If
+    End Sub
+
+    Private Sub btnLoadList_Click(sender As Object, e As EventArgs) Handles btnLoadList.Click
+        Dim openDlg As New OpenFileDialog() With {
+            .CheckFileExists = True,
+            .CheckPathExists = True,
+            .DefaultExt = "wulfbndl",
+            .Filter = "Wulf BND File List (*.wulfbndl)|*.wulfbndl|All files (*.*)|*.*",
+            .Multiselect = True,
+            .ShowReadOnly = False,
+            .SupportMultiDottedExtensions = True,
+            .Title = "Select one or more BND file lists to add..."
+        }
+
+        openDlg.InitialDirectory = My.Settings.FileBrowserStartingPath
+
+        If openDlg.ShowDialog() = Windows.Forms.DialogResult.OK Then
+            AddFiles(File.ReadLines(openDlg.FileName))
+        End If
+    End Sub
+
+    Private Function File_ReadAllLines(filePath As String) As String()
+        If Not File.Exists(filePath) Then
+            Throw New Exception($"File '{filePath}' does not exist.")
+            Return New String() {}
+        End If
+
+        Return File.ReadAllLines(filePath)
+    End Function
+
+    Private Function File_ReadAllBytes(filePath As String) As Byte()
+        If Not File.Exists(filePath) Then
+            Throw New Exception($"File '{filePath}' does not exist.")
+            Return New Byte() {}
+        End If
+
+        Return File.ReadAllBytes(filePath)
+    End Function
+
+    Private Sub btnRestoreBackups_Click(sender As Object, e As EventArgs) Handles btnRestoreBackups.Click
+        START_JOB(BNDJobType.RestoreBackups)
+    End Sub
+
+    Private Sub MainFrm_FormClosing(sender As Object, e As FormClosingEventArgs) Handles MyBase.FormClosing
+        If CURRENT_JOB_TYPE <> BNDJobType.None Then
+            e.Cancel = Not DO_CANCEL()
+        End If
+    End Sub
 End Class

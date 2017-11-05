@@ -118,9 +118,12 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="txtInfo.Text" xml:space="preserve">
-    <value>The extract and rebuild operations operate on every single BND file name in the textbox above. Angle brackets act like end-of-line comments in it. You can add multiple files at once by using the  "Add Directory..." and "Add BND File(s)" buttons as well as by dragging and dropping multiple files onto the above box.
-
-Note: The ability to save/load the list of files in the box will be coming in a later update.
+    <value>Use the "Extract", "Rebuild", and "Restore Backups" buttons to perform BND file operations.
+These operations operate on every single BND file name in the textbox above. 
+You can add multiple files at once by using the  "Add Directory to List..." and "Add BND File(s) to List..." buttons as well as by dragging and dropping multiple files onto the above box.
+You can use the "Save List..." button to save the contents of the list box to a .wulfbndl file (a glorified .txt file; the flashy name is to keep it separated from any other .txt files you may have)
+Similarly, the "Add List..." button will add the items from a .wulfbndl file to the list box.
+If you wish to clear the list box, select all the text and press the backspace key.
 
 </value>
   </data>

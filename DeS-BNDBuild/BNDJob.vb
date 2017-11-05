@@ -2,6 +2,8 @@
 Imports System.Threading
 
 Public Structure BNDJob
+    Public Event OnFinishItem()
+
     Public Delegate Sub WorkDelegate(Job As BNDJob)
 
     Public Shared PauseCallback As New EventWaitHandle(False, EventResetMode.AutoReset)
@@ -45,6 +47,8 @@ Public Structure BNDJob
 
         currentFileIndex += 1
 
+        RaiseEvent OnFinishItem()
+
         If currentFileIndex < FileList.Count Then
             _CurrentFile = FileList(currentFileIndex)
             Return True
@@ -82,6 +86,10 @@ Public Structure BNDJob
         End If
     End Function
 
+    Public Function GetExtension(path As String, Optional includeDot As Boolean = True) As String
+        Return path.Substring(path.LastIndexOf("."c) + If(includeDot, 0, 1))
+    End Function
+
     Public Function GetPathRelativeToRootPath(path As String, rootPath As String)
         If path.StartsWith(rootPath) Then
             Return path.Substring(rootPath.Length)
@@ -106,11 +114,12 @@ Public Structure BNDJob
         Return path.Substring(0, path.LastIndexOf("."))
     End Function
 
-    Public Function GetExtractedFile(internalFileName As String) As FileInfo
-        Return New FileInfo(GetExtractedBndFileName(internalFileName))
+    Public Function GetExtractedFile(internalFileName As String, Optional isOnlyFile As Boolean = False) As FileInfo
+        Return New FileInfo(GetExtractedBndFileName(internalFileName, isOnlyFile))
     End Function
 
-    Public Function GetExtractedBndFileName(internalFileName As String) As String
+    Public Function GetExtractedBndFileName(internalFileName As String, Optional isOnlyFile As Boolean = False) As String
+
         Dim frpgPath = GetPathRelativeToVanillaFRPG(internalFileName)
         If Settings.UseCustomDataRootPath Then
 
@@ -120,10 +129,20 @@ Public Structure BNDJob
                 Dim dataPath = GetPathRelativeToDATA(GetFilePathWithoutExtension(CurrentFile.FullName))
 
                 If dataPath IsNot Nothing Then
-                    Return $"{Settings.CustomDataRootPath.Trim("\")}\data\INTERROOT_win32\{dataPath.Trim("\")}\{internalFileName.Trim("\")}"
+                    dataPath = $"{Settings.CustomDataRootPath.Trim("\")}\data\INTERROOT_win32\{dataPath.Trim("\")}"
+
+                    If isOnlyFile AndAlso Path.GetFileNameWithoutExtension(CurrentFile.FullName) =
+                            Path.GetFileNameWithoutExtension(dataPath & $"\{internalFileName.Trim("\")}") Then
+
+                        dataPath &= GetExtension(internalFileName, includeDot:=True)
+                    Else
+                        dataPath &= $"\{internalFileName.Trim("\")}"
+                    End If
                 Else
-                    Return $"{Settings.CustomDataRootPath.Trim("\")}\Unknown\{CurrentFile.Name.Trim("\")}\{If(frpgPath, internalFileName).Trim("\")}"
+                    dataPath = $"{Settings.CustomDataRootPath.Trim("\")}\Unknown\{CurrentFile.Name.Trim("\")}\{If(frpgPath, internalFileName).Trim("\")}"
                 End If
+
+                Return dataPath
             End If
 
         Else
@@ -173,5 +192,22 @@ Public Structure BNDJob
         End If
 
     End Sub
+
+    Public Function RestoreBackup(file As String) As Boolean
+        Dim f As FileInfo = Nothing
+        If Settings.UseRemoteBNDBackupPath Then
+            f = dir(GetRemoteFilePath(file, Settings.DarkSoulsDataPath, Settings.RemoteBNDBackupPath))
+        Else
+            f = dir(New FileInfo(file))
+        End If
+
+        If IO.File.Exists(f.FullName & ".bak") Then
+            IO.File.Copy(f.FullName & ".bak", f.FullName, True)
+            Return True
+        Else
+            Return False
+        End If
+
+    End Function
 
 End Structure

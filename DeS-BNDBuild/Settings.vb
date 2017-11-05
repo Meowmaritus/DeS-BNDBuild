@@ -46,6 +46,19 @@ Namespace My
             End Set
         End Property
 
+        <Setting> <Category("Basic")> <Name("Enable Verbose Output")>
+        <DefaultVal("False")>
+        <Description("Lists every single file that finishes extracting, which gives more info but also " &
+        "makes it harder to see notice rare errors.")>
+        Public Property EnableVerboseOutput As Boolean
+            Get
+                Return Me(NameOf(EnableVerboseOutput))
+            End Get
+            Set(value As Boolean)
+                Me(NameOf(EnableVerboseOutput)) = value
+            End Set
+        End Property
+
         <Setting> <Category("Data Root")> <Name("Use Custom Data Root Path")> <DefaultVal("False")>
         <Description("BND contents have the specified Custom Data Root Path substituted for " &
               "the root path 'N:\FRPG\' when exported. This does not effect the internal " &
