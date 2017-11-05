@@ -146,7 +146,7 @@ Public Structure BNDJob
             End If
 
         Else
-            Return $"{CurrentFile.FullName.Trim("\")}\{If(frpgPath, internalFileName).Trim("\")}"
+            Return $"{CurrentFile.FullName.Trim("\")}-Extracted\{If(frpgPath, internalFileName).Trim("\")}"
         End If
 
     End Function
