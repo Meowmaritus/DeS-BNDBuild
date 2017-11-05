@@ -8,7 +8,7 @@
     <OutputType>WinExe</OutputType>
     <StartupObject>DeSBNDBuild.My.MyApplication</StartupObject>
     <RootNamespace>DeSBNDBuild</RootNamespace>
-    <AssemblyName>DeSBNDBuild</AssemblyName>
+    <AssemblyName>Wulf%27s BND Rebuilder 2</AssemblyName>
     <FileAlignment>512</FileAlignment>
     <MyType>WindowsForms</MyType>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
@@ -20,7 +20,7 @@
     <DefineDebug>true</DefineDebug>
     <DefineTrace>true</DefineTrace>
     <OutputPath>bin\Debug\</OutputPath>
-    <DocumentationFile>DeSBNDBuild.xml</DocumentationFile>
+    <DocumentationFile>Wulf%27s BND Rebuilder 2.xml</DocumentationFile>
     <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
     <RemoveIntegerChecks>true</RemoveIntegerChecks>
   </PropertyGroup>
@@ -31,7 +31,7 @@
     <DefineTrace>false</DefineTrace>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DocumentationFile>DeSBNDBuild.xml</DocumentationFile>
+    <DocumentationFile>Wulf%27s BND Rebuilder 2.xml</DocumentationFile>
     <NoWarn>42016,41999,42017,42018,42019,42032,42036,42020,42021,42022</NoWarn>
     <DebugSymbols>true</DebugSymbols>
   </PropertyGroup>
