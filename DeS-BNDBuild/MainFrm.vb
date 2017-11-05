@@ -1672,9 +1672,9 @@ Public Class MainFrm
                 If openDlg.ShowDialog() Then
                     My.Settings.DarkSoulsDataPath = openDlg.FileName
                     My.Settings.RemoteBNDBackupPath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDBackups"
-                    'My.Settings.RemoteBNDTablePath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDInfoTables"
+                    My.Settings.RemoteBNDTablePath = openDlg.FileName.Trim("\") & "\DesBNDBuild-BNDInfoTables"
                     My.Settings.UseRemoteBNDBackupPath = True
-                    'My.Settings.UseRemoteBNDTablePath = True
+                    My.Settings.UseRemoteBNDTablePath = True
                     My.Settings.Save()
 
                     Dim choice2 = MessageBox.Show("It is recommended that you select a unified data directory to keep extracted files " &
@@ -1708,7 +1708,7 @@ Public Class MainFrm
                         Loop While reselectDirectory
 
                         My.Settings.CustomDataRootPath = openDlg.FileName
-
+                        My.Settings.UseCustomDataRootPath = True
                         My.Settings.FileBrowserStartingPath = My.Settings.DarkSoulsDataPath
                     End If
 
